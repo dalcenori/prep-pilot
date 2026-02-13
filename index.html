@@ -1,0 +1,1282 @@
+<!doctype html>
+<!--
+PrepPilot™ — Preppers App (MVP) Single-File Web App
+Save as: index.html
+Deploy on GitHub Pages (static, no build tools).
+
+Core MVP:
+- Coverage Map (Water, Calories, Heat, Medical, Power/Light, Comms/Info)
+- "Days Covered" / runway estimates + weakest-link logic
+- Rotation Engine (add items with category + qty + units + expiration/next-check; reminders list)
+- Build Plans (minimal / better / beast presets)
+- Scenario Test (simple scenario stress test)
+- Local-only storage (localStorage)
+
+Note: This MVP uses simple “Buffer Math” style runway estimates—tunable later with your formulas.
+-->
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PrepPilot™ — Readiness OS</title>
+  <meta name="theme-color" content="#070a12" />
+  <style>
+    :root{
+      --bg:#070a12;
+      --panel:#0b1122;
+      --panel2:#0a0f1f;
+      --text:#eaf0ff;
+      --muted:#aab6da;
+      --line:rgba(255,255,255,.10);
+      --shadow: 0 18px 60px rgba(0,0,0,.55);
+      --r:20px;
+      --r2:14px;
+
+      --green:#40d58a;
+      --yellow:#f5d24f;
+      --orange:#ff9d4d;
+      --red:#ff5b6b;
+      --blue:#65a6ff;
+
+      --barbg: rgba(255,255,255,.08);
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background:
+        radial-gradient(1100px 800px at 15% -10%, rgba(101,166,255,.14), transparent 60%),
+        radial-gradient(900px 700px at 95% 0%, rgba(255,91,107,.10), transparent 55%),
+        radial-gradient(1000px 800px at 50% 120%, rgba(64,213,138,.10), transparent 55%),
+        var(--bg);
+      color: var(--text);
+    }
+
+    .wrap{
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 18px 16px 34px;
+    }
+
+    header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom: 14px;
+    }
+
+    .brand h1{
+      margin:0;
+      font-size: 20px;
+      font-weight: 950;
+      letter-spacing:.2px;
+    }
+    .brand .sub{
+      margin-top:4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height:1.35;
+      max-width: 70ch;
+    }
+
+    .pillRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      user-select:none;
+    }
+    .pill .dot{
+      width:10px; height:10px; border-radius:999px;
+      background: var(--green);
+      box-shadow: 0 0 0 4px rgba(64,213,138,.10);
+    }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 14px;
+    }
+    @media (max-width: 940px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      overflow:hidden;
+    }
+
+    .topRow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 10px;
+    }
+    .title{
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing:.22px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin:0;
+    }
+
+    .tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .tab{
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 950;
+      font-size: 12px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .tab.active{
+      background: rgba(101,166,255,.20);
+      border-color: rgba(101,166,255,.35);
+    }
+
+    .miniBtn{
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 950;
+      font-size: 12px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .miniBtn.primary{
+      background: rgba(101,166,255,.20);
+      border-color: rgba(101,166,255,.35);
+    }
+    .miniBtn.danger{
+      background: rgba(255,91,107,.16);
+      border-color: rgba(255,91,107,.30);
+    }
+    .miniBtn:active{ transform: translateY(1px); }
+
+    /* Coverage */
+    .coverageGrid{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 10px;
+    }
+    @media (max-width: 560px){
+      .coverageGrid{ grid-template-columns: 1fr; }
+    }
+    .domain{
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      border-radius: 18px;
+      padding: 12px;
+    }
+    .domainTop{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 10px;
+    }
+    .domainName{
+      margin:0;
+      font-weight: 950;
+      font-size: 14px;
+      letter-spacing:.2px;
+    }
+    .domainMeta{
+      color: var(--muted);
+      font-weight: 900;
+      font-size: 12px;
+      text-align:right;
+      line-height:1.2;
+      white-space:nowrap;
+    }
+
+    .bar{
+      height: 12px;
+      background: var(--barbg);
+      border-radius: 999px;
+      overflow:hidden;
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .fill{
+      height:100%;
+      width:50%;
+      border-radius: 999px;
+      background: rgba(255,255,255,.75);
+    }
+
+    .weakest{
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,91,107,.08);
+      color: var(--muted);
+      font-size: 12px;
+      line-height:1.4;
+    }
+    .weakest strong{ color: var(--text); }
+
+    /* Lists */
+    .list{
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+    }
+    .row{
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      border-radius: 18px;
+      padding: 12px;
+    }
+    .rowTop{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      align-items:flex-start;
+    }
+    .rowTitle{
+      margin:0;
+      font-size: 14px;
+      font-weight: 950;
+      letter-spacing:.2px;
+    }
+    .rowSub{
+      margin:6px 0 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height:1.35;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.04);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 950;
+      white-space:nowrap;
+    }
+
+    /* Forms */
+    .field{
+      display:flex;
+      flex-direction:column;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    label{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing:.22px;
+      text-transform: uppercase;
+    }
+    input, select, textarea{
+      width:100%;
+      padding: 12px 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      color: var(--text);
+      outline:none;
+      font-weight: 700;
+    }
+    textarea{ min-height: 86px; resize: vertical; }
+
+    .twoCol{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (max-width: 560px){
+      .twoCol{ grid-template-columns: 1fr; }
+    }
+
+    .note{
+      margin-top: 10px;
+      padding: 12px 12px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.10);
+      color: var(--muted);
+      font-size: 12px;
+      line-height:1.4;
+    }
+    .note strong{ color: var(--text); }
+
+    /* Right column */
+    .kpi{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .kpiBox{
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      border-radius: 18px;
+      padding: 12px;
+    }
+    .kpiBox .k{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing:.22px;
+    }
+    .kpiBox .v{
+      margin-top: 6px;
+      font-size: 20px;
+      font-weight: 950;
+      letter-spacing:.2px;
+    }
+    .kpiBox .s{
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height:1.35;
+    }
+
+    footer{
+      margin-top: 14px;
+      text-align:center;
+      color: var(--muted);
+      font-size: 12px;
+      opacity:.9;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <h1>PrepPilot™ <span class="mono" style="opacity:.9">— Readiness OS</span></h1>
+        <div class="sub">Coverage-first prepping: measure runway, find weakest link, rotate supplies, and test scenarios without chaos.</div>
+      </div>
+
+      <div class="pillRow">
+        <div class="pill" id="statusPill"><span class="dot" id="statusDot"></span><span id="statusText">READY</span></div>
+        <button class="pill" id="btnExport" title="Copy your data as JSON">Export</button>
+        <button class="pill" id="btnImport" title="Paste JSON to restore">Import</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- LEFT: Tabs & Views -->
+      <div class="card">
+        <div class="topRow">
+          <p class="title">Workspace</p>
+          <div class="tabs" id="tabs"></div>
+        </div>
+
+        <!-- Views -->
+        <div id="viewCoverage"></div>
+        <div id="viewRotation" style="display:none;"></div>
+        <div id="viewPlans" style="display:none;"></div>
+        <div id="viewScenarios" style="display:none;"></div>
+      </div>
+
+      <!-- RIGHT: Settings / Inputs -->
+      <div class="card">
+        <div class="topRow">
+          <p class="title">Household & assumptions</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+            <button class="miniBtn primary" id="btnRecalc">Recalculate</button>
+            <button class="miniBtn danger" id="btnReset">Reset</button>
+          </div>
+        </div>
+
+        <div class="twoCol">
+          <div class="field">
+            <label for="hhSize">Household size</label>
+            <input id="hhSize" type="number" min="1" step="1" />
+          </div>
+          <div class="field">
+            <label for="climate">Climate</label>
+            <select id="climate">
+              <option value="mild">Mild</option>
+              <option value="cold">Cold / Winter-prone</option>
+              <option value="hot">Hot / Heat-prone</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="twoCol">
+          <div class="field">
+            <label for="waterPerDay">Water per person/day (liters)</label>
+            <input id="waterPerDay" type="number" min="0.5" step="0.1" />
+          </div>
+          <div class="field">
+            <label for="calPerDay">Calories per person/day</label>
+            <input id="calPerDay" type="number" min="1200" step="50" />
+          </div>
+        </div>
+
+        <div class="twoCol">
+          <div class="field">
+            <label for="powerWhPerDay">Power need/day (Wh)</label>
+            <input id="powerWhPerDay" type="number" min="50" step="10" />
+          </div>
+          <div class="field">
+            <label for="commsHoursPerDay">Comms need/day (hrs)</label>
+            <input id="commsHoursPerDay" type="number" min="0" step="0.5" />
+          </div>
+        </div>
+
+        <div class="note">
+          <strong>These are assumptions</strong> used to calculate runway. We’ll make them more granular later (kids, pets, meds, winter heat loss, etc.).
+        </div>
+
+        <div class="kpi" id="kpis"></div>
+      </div>
+    </div>
+
+    <footer>PrepPilot™ MVP • Static HTML • Local-only storage • <span class="mono">v0.1</span></footer>
+  </div>
+
+<script>
+(() => {
+  // ---------------------------
+  // State + persistence
+  // ---------------------------
+  const KEY = "preppilot_state_v01";
+
+  const DEFAULTS = {
+    tab: "coverage",
+    household: {
+      size: 1,
+      climate: "mild",
+      waterPerDayL: 3.0,     // per person
+      caloriesPerDay: 2200,  // per person
+      powerWhPerDay: 250,    // household estimate
+      commsHoursPerDay: 2.0  // household estimate
+    },
+    // Inventory items for rotation engine
+    items: [
+      // sample items to make it feel alive
+      item("Water (bottled)", "water", 12, "L", datePlus(120), "Rotate bottled water"),
+      item("Rice + beans", "calories", 15000, "kcal", datePlus(240), "Dry staple rotation"),
+      item("First aid basics", "medical", 1, "kit", datePlus(180), "Check supplies / restock"),
+      item("Power bank", "power", 20000, "mAh", datePlus(90), "Charge + test"),
+      item("Handheld radio", "comms", 1, "unit", datePlus(60), "Battery check / test reception"),
+      item("Blankets / insulation", "heat", 1, "set", datePlus(365), "Inspect / stage")
+    ],
+    // Totals you can also set manually later (MVP uses items + heuristics)
+    coverageTotals: {
+      // computed from items; kept here for override later
+    }
+  };
+
+  function item(name, domain, qty, unit, nextCheckISO, note){
+    return {
+      id: cryptoId(),
+      name, domain,
+      qty: Number(qty)||0,
+      unit: unit || "",
+      nextCheckISO: nextCheckISO || null,
+      note: note || ""
+    };
+  }
+
+  let state = load();
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return structuredClone(DEFAULTS);
+      const p = JSON.parse(raw);
+      return {
+        ...structuredClone(DEFAULTS),
+        ...p,
+        household: { ...structuredClone(DEFAULTS.household), ...(p.household||{}) },
+        items: Array.isArray(p.items) ? p.items : structuredClone(DEFAULTS.items),
+      };
+    }catch(e){
+      return structuredClone(DEFAULTS);
+    }
+  }
+  function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+
+  function reset(){
+    state = structuredClone(DEFAULTS);
+    save();
+    syncInputs();
+    render();
+  }
+
+  // ---------------------------
+  // Tabs
+  // ---------------------------
+  const TAB_LIST = [
+    { id:"coverage", label:"Coverage Map" },
+    { id:"rotation", label:"Rotation Engine" },
+    { id:"plans", label:"Build Plans" },
+    { id:"scenarios", label:"Scenario Test" },
+  ];
+
+  const el = {
+    tabs: document.getElementById("tabs"),
+
+    viewCoverage: document.getElementById("viewCoverage"),
+    viewRotation: document.getElementById("viewRotation"),
+    viewPlans: document.getElementById("viewPlans"),
+    viewScenarios: document.getElementById("viewScenarios"),
+
+    statusPill: document.getElementById("statusPill"),
+    statusDot: document.getElementById("statusDot"),
+    statusText: document.getElementById("statusText"),
+
+    btnRecalc: document.getElementById("btnRecalc"),
+    btnReset: document.getElementById("btnReset"),
+
+    btnExport: document.getElementById("btnExport"),
+    btnImport: document.getElementById("btnImport"),
+
+    hhSize: document.getElementById("hhSize"),
+    climate: document.getElementById("climate"),
+    waterPerDay: document.getElementById("waterPerDay"),
+    calPerDay: document.getElementById("calPerDay"),
+    powerWhPerDay: document.getElementById("powerWhPerDay"),
+    commsHoursPerDay: document.getElementById("commsHoursPerDay"),
+
+    kpis: document.getElementById("kpis"),
+  };
+
+  // ---------------------------
+  // Domain model
+  // ---------------------------
+  const DOMAINS = [
+    { id:"water",   name:"Water",        unit:"L",    icon:"💧" },
+    { id:"calories",name:"Calories",     unit:"kcal", icon:"🍲" },
+    { id:"heat",    name:"Heat/Shelter", unit:"score",icon:"🧱" },
+    { id:"medical", name:"Medical",      unit:"score",icon:"🩹" },
+    { id:"power",   name:"Power/Light",  unit:"Wh",   icon:"🔋" },
+    { id:"comms",   name:"Comms/Info",   unit:"hrs",  icon:"📻" },
+  ];
+
+  // ---------------------------
+  // Coverage calculations (MVP)
+  // ---------------------------
+  function computeCoverage(){
+    // Aggregate from items:
+    const totals = { waterL:0, kcal:0, powerWh:0, commsHours:0 };
+
+    // domain scores for "heat/medical" in MVP are heuristic counts
+    let heatScore = 0;
+    let medScore = 0;
+
+    for(const it of state.items){
+      const d = it.domain;
+      const q = Number(it.qty)||0;
+      const u = (it.unit||"").toLowerCase();
+
+      if(d === "water"){
+        // convert to liters if possible
+        totals.waterL += toLiters(q, u);
+      }
+      if(d === "calories"){
+        totals.kcal += toKcal(q, u);
+      }
+      if(d === "power"){
+        totals.powerWh += toWh(q, u);
+      }
+      if(d === "comms"){
+        totals.commsHours += toHours(q, u);
+      }
+      if(d === "heat"){
+        heatScore += scoreItem(q, u);
+      }
+      if(d === "medical"){
+        medScore += scoreItem(q, u);
+      }
+    }
+
+    // Now compute runway (days) based on household assumptions
+    const hh = state.household;
+    const people = Math.max(1, Number(hh.size)||1);
+
+    const waterNeedPerDay = Math.max(0.5, Number(hh.waterPerDayL)||3) * people; // L/day
+    const calNeedPerDay = Math.max(1200, Number(hh.caloriesPerDay)||2200) * people; // kcal/day
+    const powerNeedPerDay = Math.max(50, Number(hh.powerWhPerDay)||250); // Wh/day household
+    const commsNeedPerDay = Math.max(0, Number(hh.commsHoursPerDay)||2); // hrs/day household
+
+    const waterDays = totals.waterL > 0 ? (totals.waterL / waterNeedPerDay) : 0;
+    const calDays   = totals.kcal > 0 ? (totals.kcal / calNeedPerDay) : 0;
+    const powerDays = totals.powerWh > 0 ? (totals.powerWh / powerNeedPerDay) : 0;
+    const commsDays = totals.commsHours > 0 ? (totals.commsHours / commsNeedPerDay) : 0;
+
+    // heat & medical as coarse “coverage scores” mapped to pseudo-days
+    const climate = hh.climate || "mild";
+    const heatFactor = (climate === "cold") ? 1.25 : (climate === "hot" ? 0.85 : 1.0);
+    const heatDays = (heatScore / 3) * heatFactor;   // tune later
+    const medDays  = (medScore / 3) * 1.0;           // tune later
+
+    const domains = {
+      water:   { days: waterDays, pct: toPct(waterDays), meta: `${fmt(totals.waterL)} L stored` },
+      calories:{ days: calDays,   pct: toPct(calDays),   meta: `${fmt(totals.kcal)} kcal stored` },
+      heat:    { days: heatDays,  pct: toPct(heatDays),  meta: `Heat gear score: ${fmt0(heatScore)}` },
+      medical: { days: medDays,   pct: toPct(medDays),   meta: `Medical gear score: ${fmt0(medScore)}` },
+      power:   { days: powerDays, pct: toPct(powerDays), meta: `${fmt(totals.powerWh)} Wh available` },
+      comms:   { days: commsDays, pct: toPct(commsDays), meta: `${fmt(totals.commsHours)} hrs comms` },
+    };
+
+    // weakest link = lowest days
+    const weakest = Object.entries(domains).sort((a,b) => a[1].days - b[1].days)[0];
+    const weakestId = weakest[0];
+    const weakestDays = weakest[1].days;
+
+    // readiness status
+    // (simple: >=7 days weakest = READY; >=3 = CAUTION; else CRITICAL)
+    let status = "READY";
+    let color = "var(--green)";
+    if(weakestDays < 3){ status="CRITICAL"; color="var(--red)"; }
+    else if(weakestDays < 7){ status="CAUTION"; color="var(--yellow)"; }
+
+    return { domains, weakestId, weakestDays, status, color };
+  }
+
+  // map days to bar percent for display, capped at 30 days
+  function toPct(days){
+    const cap = 30;
+    const d = Math.max(0, Math.min(cap, days));
+    return Math.round((d / cap) * 100);
+  }
+
+  // ---------------------------
+  // Views
+  // ---------------------------
+  function renderTabs(){
+    el.tabs.innerHTML = "";
+    for(const t of TAB_LIST){
+      const b = document.createElement("button");
+      b.className = "tab" + (state.tab === t.id ? " active":"");
+      b.textContent = t.label;
+      b.addEventListener("click", () => {
+        state.tab = t.id;
+        save();
+        showTab(t.id);
+      });
+      el.tabs.appendChild(b);
+    }
+  }
+
+  function showTab(id){
+    el.viewCoverage.style.display = (id === "coverage") ? "block" : "none";
+    el.viewRotation.style.display = (id === "rotation") ? "block" : "none";
+    el.viewPlans.style.display = (id === "plans") ? "block" : "none";
+    el.viewScenarios.style.display = (id === "scenarios") ? "block" : "none";
+    renderTabs();
+    renderActiveView();
+  }
+
+  function renderActiveView(){
+    if(state.tab === "coverage") renderCoverage();
+    if(state.tab === "rotation") renderRotation();
+    if(state.tab === "plans") renderPlans();
+    if(state.tab === "scenarios") renderScenarios();
+  }
+
+  function renderCoverage(){
+    const cov = computeCoverage();
+    renderStatus(cov.status, cov.color);
+    renderKPIs(cov);
+
+    const boxes = DOMAINS.map(d => {
+      const info = cov.domains[d.id];
+      return `
+        <div class="domain">
+          <div class="domainTop">
+            <div>
+              <p class="domainName">${d.icon} ${escapeHtml(d.name)}</p>
+              <div class="mono" style="margin-top:6px; color: var(--muted); font-size:12px; font-weight:900;">
+                ${daysLabel(info.days)}
+              </div>
+            </div>
+            <div class="domainMeta">
+              <div class="mono">${escapeHtml(info.meta)}</div>
+              <div style="margin-top:6px;">Runway</div>
+            </div>
+          </div>
+          <div class="bar"><div class="fill" style="width:${info.pct}%; background:${colorForPct(info.pct)}"></div></div>
+        </div>
+      `;
+    }).join("");
+
+    const weakestName = DOMAINS.find(d => d.id === cov.weakestId)?.name || cov.weakestId;
+
+    el.viewCoverage.innerHTML = `
+      <div class="topRow">
+        <p class="title">Coverage map</p>
+        <button class="miniBtn primary" id="btnQuickAdd">Quick Add Item</button>
+      </div>
+
+      <div class="coverageGrid">
+        ${boxes}
+      </div>
+
+      <div class="weakest">
+        <strong>Weakest link:</strong> ${escapeHtml(weakestName)} — ${daysLabel(cov.weakestDays)}.
+        <div style="margin-top:6px;">PrepPilot follows one rule: <strong>the thinnest domain governs readiness</strong>.</div>
+      </div>
+
+      <div class="note">
+        <strong>Next step:</strong> Add your real inventory in <strong>Rotation Engine</strong>.
+        Coverage updates automatically from your items.
+      </div>
+    `;
+
+    document.getElementById("btnQuickAdd").onclick = () => {
+      state.tab = "rotation";
+      save();
+      showTab("rotation");
+      // focus first input
+      setTimeout(() => {
+        const inp = document.getElementById("itName");
+        if(inp) inp.focus();
+      }, 50);
+    };
+  }
+
+  function renderRotation(){
+    // sort by nextCheck
+    const sorted = [...state.items].sort((a,b) => {
+      const da = a.nextCheckISO ? new Date(a.nextCheckISO).getTime() : Infinity;
+      const db = b.nextCheckISO ? new Date(b.nextCheckISO).getTime() : Infinity;
+      return da - db;
+    });
+
+    const list = sorted.map(it => {
+      const due = it.nextCheckISO ? new Date(it.nextCheckISO) : null;
+      const days = due ? daysUntil(due) : null;
+      const dueLabel = due ? (days <= 0 ? "DUE" : `${days}d`) : "—";
+      const dueColor = due ? (days <= 0 ? "var(--red)" : days <= 14 ? "var(--yellow)" : "var(--green)") : "rgba(255,255,255,.35)";
+
+      return `
+        <div class="row">
+          <div class="rowTop">
+            <div style="min-width:0;">
+              <p class="rowTitle">${escapeHtml(it.name)}</p>
+              <p class="rowSub">
+                <span class="badge">${domainLabel(it.domain)}</span>
+                <span class="badge"><span class="mono">${escapeHtml(String(it.qty))}</span> ${escapeHtml(it.unit||"")}</span>
+                ${it.note ? `<span class="badge">${escapeHtml(it.note)}</span>` : ""}
+              </p>
+            </div>
+            <div class="badge" style="border-color: color-mix(in oklab, ${dueColor} 45%, rgba(255,255,255,.12)); background: color-mix(in oklab, ${dueColor} 10%, rgba(255,255,255,.04));">
+              <span class="mono">${escapeHtml(dueLabel)}</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+            <button class="miniBtn" onclick="window.__pp_done('${it.id}')">Mark Checked</button>
+            <button class="miniBtn danger" onclick="window.__pp_del('${it.id}')">Delete</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    el.viewRotation.innerHTML = `
+      <div class="topRow">
+        <p class="title">Rotation engine</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+          <button class="miniBtn" id="btnSeed">Seed Examples</button>
+          <button class="miniBtn primary" id="btnAdd">Add Item</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <p class="rowTitle">Add / Update Item</p>
+        <p class="rowSub">Add supplies once. PrepPilot schedules rotation and check dates.</p>
+
+        <div class="field">
+          <label for="itName">Item name</label>
+          <input id="itName" placeholder="e.g., Bottled water, Rice, AA batteries, Med kit" />
+        </div>
+
+        <div class="twoCol">
+          <div class="field">
+            <label for="itDomain">Domain</label>
+            <select id="itDomain">
+              <option value="water">Water</option>
+              <option value="calories">Calories</option>
+              <option value="heat">Heat/Shelter</option>
+              <option value="medical">Medical</option>
+              <option value="power">Power/Light</option>
+              <option value="comms">Comms/Info</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="itQty">Quantity</label>
+            <input id="itQty" type="number" step="0.1" value="1" />
+          </div>
+        </div>
+
+        <div class="twoCol">
+          <div class="field">
+            <label for="itUnit">Units</label>
+            <input id="itUnit" placeholder="L, gal, kcal, Wh, mAh, hrs, kit, set..." />
+          </div>
+          <div class="field">
+            <label for="itNext">Next check / expiration</label>
+            <input id="itNext" type="date" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="itNote">Note</label>
+          <input id="itNote" placeholder="e.g., rotate, charge/test, replace filter, meds expire" />
+        </div>
+
+        <button class="miniBtn primary" id="btnSaveItem" style="width:100%; padding:14px 12px; border-radius:18px;">SAVE ITEM</button>
+      </div>
+
+      <div class="topRow" style="margin-top: 12px;">
+        <p class="title">Upcoming checks</p>
+        <span class="badge">Local-only</span>
+      </div>
+
+      <div class="list">
+        ${list || `<div class="note"><strong>No items yet.</strong> Add your inventory above. Coverage updates automatically.</div>`}
+      </div>
+    `;
+
+    // wire globals for quick buttons
+    window.__pp_del = (id) => {
+      state.items = state.items.filter(x => x.id !== id);
+      save();
+      render();
+    };
+    window.__pp_done = (id) => {
+      const it = state.items.find(x => x.id === id);
+      if(!it) return;
+      // default: push next check 30 days; later you’ll choose based on domain
+      const next = new Date();
+      next.setDate(next.getDate() + 30);
+      it.nextCheckISO = next.toISOString().slice(0,10);
+      save();
+      render();
+    };
+
+    document.getElementById("btnAdd").onclick = () => {
+      document.getElementById("itName").focus();
+    };
+
+    document.getElementById("btnSeed").onclick = () => {
+      // add a couple more examples
+      state.items.push(
+        item("AA batteries", "power", 24, "pcs", datePlus(180), "Test + rotate"),
+        item("Water filter", "water", 1, "filter", datePlus(120), "Replace per schedule"),
+        item("Canned protein", "calories", 8000, "kcal", datePlus(210), "Use/replace")
+      );
+      save();
+      render();
+    };
+
+    document.getElementById("btnSaveItem").onclick = () => {
+      const name = document.getElementById("itName").value.trim();
+      const domain = document.getElementById("itDomain").value;
+      const qty = Number(document.getElementById("itQty").value || 0);
+      const unit = document.getElementById("itUnit").value.trim();
+      const next = document.getElementById("itNext").value || null;
+      const note = document.getElementById("itNote").value.trim();
+
+      if(!name){
+        alert("Add an item name.");
+        return;
+      }
+      state.items.push(item(name, domain, qty, unit, next, note));
+      save();
+      render();
+      // clear just the name for rapid entry
+      document.getElementById("itName").value = "";
+      document.getElementById("itName").focus();
+    };
+  }
+
+  function renderPlans(){
+    const plans = [
+      plan("24-Hour Blackout Kit", "Apartment-friendly minimal build.",
+        ["Water: 4–8L per person", "Light: 2 sources + batteries", "Calories: ready-to-eat", "Comms: radio or info plan", "Heat: insulation plan (blankets, layers)"]),
+      plan("72-Hour Household Plan", "Coverage across the six domains.",
+        ["Water: 3 days minimum", "Calories: shelf-stable core", "Power: phone+light minimum", "Medical: basics + meds", "Comms: redundancy", "Heat/Shelter: weather plan"]),
+      plan("Vehicle Stranded Overnight", "Stay warm, stay visible, stay calm.",
+        ["Heat: blanket + layers", "Water: 1–2L", "Calories: snack reserve", "Light: headlamp/flashlight", "Comms: charger + info"]),
+      plan("Winter Heat Failure", "Cold kills quietly—prep for the coldest window.",
+        ["Heat zone plan", "Draft blocking", "Bedding staged", "Hot drink plan (if safe)", "Buddy check signs"]),
+    ];
+
+    el.viewPlans.innerHTML = `
+      <div class="topRow">
+        <p class="title">Build plans</p>
+        <span class="badge">Minimal / Better / Beast next</span>
+      </div>
+
+      <div class="list">
+        ${plans.map(p => `
+          <div class="row">
+            <div class="rowTop">
+              <div>
+                <p class="rowTitle">${escapeHtml(p.title)}</p>
+                <p class="rowSub">${escapeHtml(p.sub)}</p>
+              </div>
+              <div class="badge">Plan</div>
+            </div>
+            <div class="note" style="margin-top:10px;">
+              ${p.bullets.map(b => `• ${escapeHtml(b)}`).join("<br>")}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="note">
+        <strong>Next upgrade:</strong> turn each plan into “Minimal / Better / Beast” tiers that automatically change your Coverage Map targets.
+      </div>
+    `;
+  }
+
+  function renderScenarios(){
+    const scenarios = [
+      { id:"power_3_winter", title:"Power Out — 3 days (winter)", stress:{ power:3, heat:4, comms:1 } },
+      { id:"water_48", title:"Water Out — 48 hours", stress:{ water:3, medical:1 } },
+      { id:"pharmacy_14", title:"Pharmacy closed — 14 days", stress:{ medical:3 } },
+      { id:"storm_72", title:"Storm isolation — 72 hours", stress:{ comms:2, power:2, water:1 } },
+    ];
+
+    const cov = computeCoverage();
+
+    el.viewScenarios.innerHTML = `
+      <div class="topRow">
+        <p class="title">Scenario test</p>
+        <span class="badge">Stress your runway</span>
+      </div>
+
+      <div class="list">
+        ${scenarios.map(s => `
+          <div class="row">
+            <div class="rowTop">
+              <div>
+                <p class="rowTitle">${escapeHtml(s.title)}</p>
+                <p class="rowSub">Tap to simulate: what breaks first?</p>
+              </div>
+              <button class="miniBtn primary" onclick="window.__pp_runScenario('${s.id}')">Run</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+
+      <div class="note">
+        <strong>How it works:</strong> scenarios temporarily reduce domain runway to show weakest-link under stress (MVP logic).
+        We’ll later base this on real consumption models.
+      </div>
+    `;
+
+    window.__pp_runScenario = (id) => {
+      const s = scenarios.find(x => x.id === id);
+      if(!s) return;
+
+      // Create a simulated copy
+      const sim = structuredClone(cov.domains);
+
+      // reduce "days" by stress values (simple)
+      for(const [k,amt] of Object.entries(s.stress)){
+        if(sim[k]) sim[k].days = Math.max(0, sim[k].days - amt);
+      }
+
+      const weakest = Object.entries(sim).sort((a,b)=>a[1].days-b[1].days)[0];
+      const weakestId = weakest[0];
+      const weakestDays = weakest[1].days;
+      const name = DOMAINS.find(d => d.id === weakestId)?.name || weakestId;
+
+      alert(`Scenario Result:\n\nWeakest link becomes: ${name}\nRemaining runway: ${daysLabel(weakestDays)}\n\nNext move: increase coverage in the weakest domain first.`);
+    };
+  }
+
+  function plan(title, sub, bullets){ return { title, sub, bullets }; }
+
+  // ---------------------------
+  // Right column KPIs
+  // ---------------------------
+  function renderKPIs(cov){
+    const weakestName = DOMAINS.find(d => d.id === cov.weakestId)?.name || cov.weakestId;
+    const status = cov.status;
+
+    const overallDays = cov.weakestDays; // weakest-link runway as “overall”
+    const target = 7; // simple target, can be user-set later
+    const gap = Math.max(0, target - overallDays);
+
+    el.kpis.innerHTML = `
+      <div class="kpiBox">
+        <div class="k">Overall runway</div>
+        <div class="v">${daysLabel(overallDays, true)}</div>
+        <div class="s">Governed by weakest link.</div>
+      </div>
+      <div class="kpiBox">
+        <div class="k">Weakest domain</div>
+        <div class="v">${escapeHtml(weakestName)}</div>
+        <div class="s">Fix this first.</div>
+      </div>
+      <div class="kpiBox">
+        <div class="k">Status</div>
+        <div class="v">${escapeHtml(status)}</div>
+        <div class="s">Based on weakest runway.</div>
+      </div>
+      <div class="kpiBox">
+        <div class="k">Gap to 7 days</div>
+        <div class="v">${gap > 0 ? `${fmt1(gap)} d` : "0 d"}</div>
+        <div class="s">Your “minimum-ready” target.</div>
+      </div>
+    `;
+  }
+
+  // ---------------------------
+  // Status pill
+  // ---------------------------
+  function renderStatus(status, color){
+    el.statusText.textContent = status;
+    el.statusDot.style.background = color;
+    el.statusDot.style.boxShadow = `0 0 0 4px color-mix(in oklab, ${color} 18%, transparent)`;
+    el.statusPill.style.background = `color-mix(in oklab, ${color} 10%, rgba(255,255,255,.03))`;
+    el.statusPill.style.borderColor = `color-mix(in oklab, ${color} 30%, rgba(255,255,255,.10))`;
+  }
+
+  // ---------------------------
+  // Inputs wiring
+  // ---------------------------
+  function syncInputs(){
+    const h = state.household;
+    el.hhSize.value = h.size;
+    el.climate.value = h.climate;
+    el.waterPerDay.value = h.waterPerDayL;
+    el.calPerDay.value = h.caloriesPerDay;
+    el.powerWhPerDay.value = h.powerWhPerDay;
+    el.commsHoursPerDay.value = h.commsHoursPerDay;
+  }
+
+  function applyInputs(){
+    state.household.size = Math.max(1, Number(el.hhSize.value)||1);
+    state.household.climate = el.climate.value;
+    state.household.waterPerDayL = Math.max(0.5, Number(el.waterPerDay.value)||3);
+    state.household.caloriesPerDay = Math.max(1200, Number(el.calPerDay.value)||2200);
+    state.household.powerWhPerDay = Math.max(50, Number(el.powerWhPerDay.value)||250);
+    state.household.commsHoursPerDay = Math.max(0, Number(el.commsHoursPerDay.value)||2);
+
+    save();
+    render();
+  }
+
+  // ---------------------------
+  // Export / Import
+  // ---------------------------
+  function exportData(){
+    const data = JSON.stringify(state, null, 2);
+    // copy to clipboard (fallback to prompt)
+    navigator.clipboard?.writeText(data).then(() => {
+      alert("Export copied to clipboard.");
+    }).catch(() => {
+      prompt("Copy this JSON:", data);
+    });
+  }
+
+  function importData(){
+    const txt = prompt("Paste your PrepPilot JSON:");
+    if(!txt) return;
+    try{
+      const parsed = JSON.parse(txt);
+      // minimal validation
+      if(!parsed.household || !Array.isArray(parsed.items)){
+        alert("Invalid data format.");
+        return;
+      }
+      state = {
+        ...structuredClone(DEFAULTS),
+        ...parsed,
+        household: { ...structuredClone(DEFAULTS.household), ...(parsed.household||{}) },
+        items: parsed.items
+      };
+      save();
+      syncInputs();
+      render();
+      alert("Import complete.");
+    }catch(e){
+      alert("Could not parse JSON.");
+    }
+  }
+
+  // ---------------------------
+  // Helpers: conversions (MVP-friendly)
+  // ---------------------------
+  function toLiters(qty, unit){
+    const u = (unit||"").toLowerCase().trim();
+    if(u === "l" || u === "liter" || u === "liters") return qty;
+    if(u === "ml" || u === "milliliter" || u === "milliliters") return qty / 1000;
+    if(u === "gal" || u === "gallon" || u === "gallons") return qty * 3.785;
+    if(u === "oz" || u === "fl oz" || u === "floz") return qty * 0.0295735;
+    // unknown -> assume already liters
+    return qty;
+  }
+
+  function toKcal(qty, unit){
+    const u = (unit||"").toLowerCase().trim();
+    if(u === "kcal" || u === "calories") return qty;
+    if(u === "cal") return qty / 1000;
+    // unknown -> assume kcal
+    return qty;
+  }
+
+  function toWh(qty, unit){
+    const u = (unit||"").toLowerCase().trim();
+    if(u === "wh") return qty;
+    if(u === "kwh") return qty * 1000;
+    if(u === "mah"){
+      // rough: mAh depends on voltage; assume ~3.7V typical power bank -> Wh ≈ (mAh*3.7)/1000
+      return (qty * 3.7) / 1000;
+    }
+    // unknown -> assume Wh
+    return qty;
+  }
+
+  function toHours(qty, unit){
+    const u = (unit||"").toLowerCase().trim();
+    if(u === "hr" || u === "hrs" || u === "hour" || u === "hours") return qty;
+    if(u === "min" || u === "mins" || u === "minutes") return qty / 60;
+    // unknown -> assume hours
+    return qty;
+  }
+
+  function scoreItem(qty, unit){
+    // simple heuristic: any item contributes 1+ based on quantity
+    if(qty <= 0) return 0;
+    if(qty < 1) return 1;
+    if(qty < 3) return 2;
+    return 3;
+  }
+
+  function domainLabel(id){
+    const d = DOMAINS.find(x => x.id === id);
+    return d ? `${d.icon} ${d.name}` : id;
+  }
+
+  function daysLabel(days, big=false){
+    const d = Math.max(0, days);
+    if(d === 0) return big ? "0 d" : "0 days";
+    if(d < 1) return big ? `${fmt1(d)} d` : `${fmt1(d)} days`;
+    if(d < 30) return big ? `${fmt1(d)} d` : `${fmt1(d)} days`;
+    return big ? "30+ d" : "30+ days";
+  }
+
+  function colorForPct(pct){
+    const p = clamp(pct,0,100);
+    const c = p >= 70 ? "var(--green)" : p >= 45 ? "var(--yellow)" : p >= 25 ? "var(--orange)" : "var(--red)";
+    return `color-mix(in oklab, ${c} 82%, rgba(255,255,255,.10))`;
+  }
+
+  function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, s => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[s]));
+  }
+
+  function fmt(n){
+    const x = Number(n)||0;
+    if(x >= 10000) return Math.round(x).toLocaleString();
+    if(x >= 1000) return Math.round(x).toLocaleString();
+    if(x >= 100) return Math.round(x).toString();
+    return (Math.round(x*10)/10).toString();
+  }
+  function fmt0(n){ return Math.round(Number(n)||0).toString(); }
+  function fmt1(n){ return (Math.round((Number(n)||0)*10)/10).toString(); }
+
+  function daysUntil(date){
+    const now = new Date();
+    const ms = date.getTime() - now.getTime();
+    return Math.ceil(ms / (1000*60*60*24));
+  }
+
+  function datePlus(days){
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0,10);
+  }
+
+  function cryptoId(){
+    // small unique ID for items
+    return Math.random().toString(16).slice(2) + "-" + Math.random().toString(16).slice(2);
+  }
+
+  // ---------------------------
+  // Wire events
+  // ---------------------------
+  function wire(){
+    el.btnRecalc.addEventListener("click", applyInputs);
+    el.btnReset.addEventListener("click", () => {
+      if(confirm("Reset PrepPilot to defaults?")) reset();
+    });
+    el.btnExport.addEventListener("click", exportData);
+    el.btnImport.addEventListener("click", importData);
+
+    // Recalc on Enter in inputs
+    [el.hhSize, el.waterPerDay, el.calPerDay, el.powerWhPerDay, el.commsHoursPerDay].forEach(inp => {
+      inp.addEventListener("keydown", (e) => {
+        if(e.key === "Enter") applyInputs();
+      });
+    });
+    el.climate.addEventListener("change", applyInputs);
+  }
+
+  // ---------------------------
+  // Render
+  // ---------------------------
+  function render(){
+    renderTabs();
+    syncInputs();
+    showTab(state.tab);
+  }
+
+  // ---------------------------
+  // Init
+  // ---------------------------
+  wire();
+  render();
+
+})();
+</script>
+</body>
+</html>
